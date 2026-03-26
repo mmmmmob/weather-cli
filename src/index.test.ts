@@ -1,4 +1,4 @@
-import { startApp, handleSIGINT } from "./index";
+import { startApp } from "./index";
 import inquirer from "inquirer";
 import { getWeatherData } from "./services/weather";
 import { displayWeather, displayError } from "./ui/display";
@@ -44,34 +44,6 @@ const mockedPrompt = inquirer.prompt as unknown as jest.Mock;
 const mockedGetWeatherData = getWeatherData as jest.Mock;
 const mockedDisplayWeather = displayWeather as jest.Mock;
 const mockedDisplayError = displayError as jest.Mock;
-
-// ─── SIGINT handler ───────────────────────────────────────────────────────────
-
-describe("handleSIGINT", () => {
-  let consoleSpy: jest.SpyInstance;
-  let exitSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
-    // mockImplementation prevents process.exit from actually terminating Jest.
-    exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {}) as any);
-  });
-
-  afterEach(() => {
-    consoleSpy.mockRestore();
-    exitSpy.mockRestore();
-  });
-
-  it("should print a goodbye message", () => {
-    handleSIGINT();
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Goodbye"));
-  });
-
-  it("should call process.exit(0)", () => {
-    handleSIGINT();
-    expect(exitSpy).toHaveBeenCalledWith(0);
-  });
-});
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -217,10 +189,7 @@ describe("startApp", () => {
     );
   });
 
-  // ── Ctrl+C / ExitPromptError (fallback path for newer inquirer versions) ────
-  // In inquirer v9 legacy API, Ctrl+C re-emits SIGINT via process.kill rather
-  // than throwing ExitPromptError. The handleSIGINT listener covers real usage;
-  // these tests verify the in-loop fallback catch still works correctly.
+  // ── Ctrl+C / ExitPromptError ────────────────────────────────────────────────
 
   it("should resolve (not throw) when the user presses Ctrl+C", async () => {
     const exitError = Object.assign(new Error("User force closed the prompt"), {

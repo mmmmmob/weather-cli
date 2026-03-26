@@ -5,16 +5,6 @@ import { displayError, displayWeather } from "./ui/display.js";
 import chalk from "chalk";
 import ora from "ora";
 
-// Inquirer's legacy API handles Ctrl+C by re-emitting SIGINT on the process
-// (baseUI.js: onForceClose → process.kill(pid, 'SIGINT')).
-// ExitPromptError is therefore never thrown; we must listen at the OS level.
-export const handleSIGINT = () => {
-  console.log("\n\n👋 Goodbye!");
-  process.exit(0);
-};
-
-process.once("SIGINT", handleSIGINT);
-
 export const startApp = async () => {
   console.log(chalk.green.bold("\n☀️  Welcome to Weather CLI\n"));
 
@@ -31,19 +21,14 @@ export const startApp = async () => {
       ]);
       city = answer.city;
     } catch (e: any) {
-      // Fallback: newer versions of @inquirer/prompts throw ExitPromptError
-      // instead of re-emitting SIGINT.
       if (e.name === "ExitPromptError") {
-        process.removeListener("SIGINT", handleSIGINT);
         console.log("\n👋 Goodbye!");
         break;
       }
-      process.removeListener("SIGINT", handleSIGINT);
       throw e;
     }
 
     if (city.toLowerCase() === "q") {
-      process.removeListener("SIGINT", handleSIGINT);
       console.log("\n👋 Goodbye!\n");
       break;
     }
