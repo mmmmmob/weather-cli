@@ -3,7 +3,7 @@ import {
   WeatherSchema,
   type GeocodingResponse,
   type WeatherData,
-} from "../types/index.js";
+} from "../types/Response.ts";
 
 // Marks errors thrown by our own logic so the catch block never converts
 // them into a generic "Network error" message.
