@@ -47,6 +47,31 @@ describe("getWeatherData", () => {
     );
   });
 
+  // ── Response type error ───────────────────────────────────────────────────
+  it("should throw an error if the weather API returns invalid data", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              latitude: 13.75,
+              longitude: 100.5,
+              name: "Bangkok",
+              country: "Thailand",
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { current_weather: { temp: "hot", windspeed: "fast" } },
+        status: 200,
+      });
+
+    await expect(getWeatherData("Bangkok")).rejects.toThrow(
+      "Received invalid weather data from API",
+    );
+  });
+
   // ── Network / timeout errors (1st call) ───────────────────────────────────
 
   it("should display timeout error", async () => {

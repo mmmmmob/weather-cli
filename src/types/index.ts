@@ -1,11 +1,6 @@
-export interface WeatherData {
-  current_weather: {
-    temperature: number;
-    windspeed: number;
-    weathercode: number;
-    time: string;
-  };
-}
+import z from "zod";
+
+export type WeatherData = z.infer<typeof WeatherSchema>;
 
 export interface GeocodingResponse {
   results?: {
@@ -15,3 +10,12 @@ export interface GeocodingResponse {
     country: string;
   }[];
 }
+
+export const WeatherSchema = z.object({
+  current_weather: z.object({
+    temperature: z.number(),
+    windspeed: z.number(),
+    weathercode: z.number().optional(),
+    time: z.string().optional(),
+  }),
+});
