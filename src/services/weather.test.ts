@@ -217,7 +217,7 @@ describe("getWeatherData", () => {
 
   // ── Check sanitize city name ─────────────────────────────────────────────────
 
-  it("should sanitize city name by trimming whitespace and converting to lowercase", async () => {
+  it("should sanitize city name by trimming whitespace and converting to lowercase before passing to params", async () => {
     mockedAxios.get
       .mockResolvedValueOnce({
         data: {
@@ -240,13 +240,16 @@ describe("getWeatherData", () => {
 
     expect(mockedAxios.get).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining("name=bangkok"),
+      "https://geocoding-api.open-meteo.com/v1/search",
+      expect.objectContaining({
+        params: expect.objectContaining({ name: "bangkok" }),
+      }),
     );
   });
 
-  // ── URL construction ───────────────────────────────────────────────────────
+  // ── API call construction ──────────────────────────────────────────────────
 
-  it("should call the geocoding API with the city name embedded in the URL", async () => {
+  it("should call the geocoding API with the correct base URL and city name in params", async () => {
     mockedAxios.get
       .mockResolvedValueOnce({
         data: {
@@ -269,7 +272,10 @@ describe("getWeatherData", () => {
 
     expect(mockedAxios.get).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining("name=Bangkok"),
+      "https://geocoding-api.open-meteo.com/v1/search",
+      expect.objectContaining({
+        params: expect.objectContaining({ name: "bangkok" }),
+      }),
     );
   });
 
@@ -296,11 +302,10 @@ describe("getWeatherData", () => {
 
     expect(mockedAxios.get).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining("latitude=13.75"),
-    );
-    expect(mockedAxios.get).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("longitude=100.5"),
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: expect.objectContaining({ latitude: 13.75, longitude: 100.5 }),
+      }),
     );
   });
 });
