@@ -15,8 +15,10 @@ class WeatherAppError extends Error {
 }
 
 export const getWeatherData = async (cityName: string) => {
+  const sanitizedCityName = cityName.trim().toLowerCase();
+
   try {
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${cityName}&count=1&language=en&format=json`;
+    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${sanitizedCityName}&count=1&language=en&format=json`;
     const geoRes = await axios.get<GeocodingResponse>(geoUrl);
 
     if (!geoRes.data.results || !geoRes.data.results[0])

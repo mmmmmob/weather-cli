@@ -215,6 +215,35 @@ describe("getWeatherData", () => {
     );
   });
 
+  // ── Check sanitize city name ─────────────────────────────────────────────────
+
+  it("should sanitize city name by trimming whitespace and converting to lowercase", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              latitude: 13.75,
+              longitude: 100.5,
+              name: "Bangkok",
+              country: "Thailand",
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { current_weather: { temperature: 30, windspeed: 10 } },
+        status: 200,
+      });
+
+    await getWeatherData("   BanGkOK       ");
+
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("name=bangkok"),
+    );
+  });
+
   // ── URL construction ───────────────────────────────────────────────────────
 
   it("should call the geocoding API with the city name embedded in the URL", async () => {
