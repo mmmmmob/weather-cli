@@ -107,7 +107,7 @@ This command compiles the TypeScript source files into `dist/` and then executes
 npm run dev
 ```
 
-Uses `ts-node` to execute TypeScript directly without emitting compiled files. Useful when iterating quickly.
+Uses `tsx` to execute TypeScript directly without emitting compiled files. Useful when iterating quickly.
 
 ---
 
@@ -116,7 +116,7 @@ Uses `ts-node` to execute TypeScript directly without emitting compiled files. U
 | Command                 | Description                                      |
 |-------------------------|--------------------------------------------------|
 | `npm start`             | Compile TypeScript then run the app              |
-| `npm run dev`           | Run the app directly via `ts-node` (dev mode)    |
+| `npm run dev`           | Run the app directly via `tsx` (dev mode)        |
 | `npm run build`         | Compile TypeScript to `dist/` only               |
 | `npm test`              | Run the full test suite once                     |
 | `npm run test:watch`    | Run tests in interactive watch mode              |
