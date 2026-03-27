@@ -2,6 +2,7 @@ import { startApp } from "./index";
 import inquirer from "inquirer";
 import { getWeatherData } from "./services/weather";
 import { displayWeather, displayError } from "./ui/display";
+import { config } from "./utils/config";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -38,12 +39,23 @@ jest.mock("inquirer", () => ({
 jest.mock("./services/weather");
 jest.mock("./ui/display");
 
+// conf is ESM-only — mock the entire config module so Jest never tries to
+// load it, and so tests never read from or write to the real config file on disk.
+jest.mock("./utils/config", () => ({
+  config: {
+    get: jest.fn(),
+    set: jest.fn(),
+  },
+}));
+
 // ─── Typed helpers ────────────────────────────────────────────────────────────
 
 const mockedPrompt = inquirer.prompt as unknown as jest.Mock;
 const mockedGetWeatherData = getWeatherData as jest.Mock;
 const mockedDisplayWeather = displayWeather as jest.Mock;
 const mockedDisplayError = displayError as jest.Mock;
+const mockedConfigGet = config.get as jest.Mock;
+const mockedConfigSet = config.set as jest.Mock;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +65,8 @@ describe("startApp", () => {
   beforeEach(() => {
     // Clear call history (but NOT implementations such as mockReturnThis).
     jest.clearAllMocks();
+    // Default: no saved city — each test that needs a default must set it explicitly.
+    mockedConfigGet.mockReturnValue(undefined);
     consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
   });
 

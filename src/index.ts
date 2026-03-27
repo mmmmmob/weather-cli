@@ -4,6 +4,7 @@ import inquirer from "inquirer";
 import ora from "ora";
 import { getWeatherData } from "./services/weather.js";
 import { displayError, displayWeather } from "./ui/display.js";
+import { config } from "./utils/config.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,18 +24,40 @@ export const startApp = async () => {
   console.log(chalk.green.bold("\n☀️  Welcome to Weather CLI\n"));
 
   while (true) {
-    let city: string;
+    // Pre-fill city with the saved default (if any) — acts as both the prompt
+    // default value and the baseline for detecting whether the user entered something new.
+    let city = config.get("defaultCity") as string | undefined;
 
-    // ── Prompt — catches Ctrl+C (ExitPromptError) and unexpected inquirer errors
     try {
       const answer = await inquirer.prompt([
         {
           type: "input",
           name: "city",
           message: `Type city name (or '${QUIT_COMMAND}' to quit):`,
+          // Pre-fill with the saved default so returning users can just press Enter.
+          ...(city && { default: city }),
+        },
+        {
+          type: "confirm",
+          name: "saveAsDefault",
+          message: "Save this city as default for next time?",
+          default: true,
+          // Only show when the city is new — not quit, not already the saved default.
+          // `city` here still holds the config value since `city = answer.city` runs after.
+          when: (answers) =>
+            answers.city.toLowerCase() !== QUIT_COMMAND &&
+            answers.city !== city,
         },
       ]);
+
       city = answer.city;
+
+      if (answer.saveAsDefault) {
+        config.set("defaultCity", city);
+        console.log(
+          chalk.gray(`(💾 Saved "${city}" as default city in config)\n`),
+        );
+      }
     } catch (e: any) {
       if (e.name === "ExitPromptError") {
         console.log("\n👋 Goodbye!");
@@ -42,6 +65,10 @@ export const startApp = async () => {
       }
       throw e;
     }
+
+    // The catch block above always breaks or rethrows, so city is always
+    // assigned here — this guard exists solely to narrow the type for TypeScript.
+    if (city === undefined) continue;
 
     if (city.toLowerCase() === QUIT_COMMAND) {
       console.log("\n👋 Goodbye!\n");

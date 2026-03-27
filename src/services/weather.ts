@@ -1,5 +1,5 @@
 import axios from "axios";
-import { GeocodingResponseSchema, WeatherSchema } from "../types/Response.ts";
+import { GeocodingResponseSchema, WeatherSchema } from "../types/Response.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
