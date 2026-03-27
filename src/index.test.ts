@@ -1,4 +1,4 @@
-import { startApp } from "./index";
+import { startApp } from "./app";
 import inquirer from "inquirer";
 import { getWeatherData } from "./services/weather";
 import { displayWeather, displayError } from "./ui/display";
