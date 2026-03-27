@@ -47,6 +47,7 @@ export const startApp = async () => {
           // `city` here still holds the config value since `city = answer.city` runs after.
           when: (answers) =>
             answers.city.toLowerCase() !== QUIT_COMMAND &&
+            city === undefined &&
             answers.city !== city,
         },
       ]);
@@ -56,7 +57,9 @@ export const startApp = async () => {
       if (answer.saveAsDefault) {
         config.set("defaultCity", city);
         console.log(
-          chalk.gray(`(💾 Saved "${city}" as default city in config)\n`),
+          chalk.gray(
+            `(💾 Saved "${city}" as default city. Run 'weather --clear-default' to clear it)\n`,
+          ),
         );
       }
     } catch (e: any) {
@@ -80,10 +83,11 @@ export const startApp = async () => {
     spinner.start();
 
     // ── Service — catches API / network errors without killing the loop
+    const unit = config.get("unit") ?? "metric";
     try {
-      const data = await getWeatherData(city);
+      const data = await getWeatherData(city, unit);
       spinner.succeed("Weather data retrieved successfully!\n");
-      displayWeather(data.location, data.temp, data.wind);
+      displayWeather(data.location, data.temp, data.wind, unit);
     } catch (e: any) {
       spinner.fail("Failed to retrieve weather data.\n");
       displayError(e.message);

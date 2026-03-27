@@ -1,5 +1,6 @@
 import axios from "axios";
 import { GeocodingResponseSchema, WeatherSchema } from "../types/Response.js";
+import type { Unit } from "../types/Config.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -25,10 +26,12 @@ class WeatherAppError extends Error {
  *
  * @param cityName - The name of the city to look up (e.g. "Bangkok" or "São Paulo").
  *                   Leading/trailing whitespace and casing are normalised automatically.
+ * @param unit     - Unit system for the response. Defaults to "metric" (°C, km/h).
+ *                   Pass "imperial" for °F and mph.
  * @returns An object containing:
  *   - `location` — resolved city name and country (e.g. "Bangkok, Thailand")
- *   - `temp`     — current temperature in degrees Celsius
- *   - `wind`     — current wind speed in km/h
+ *   - `temp`     — current temperature (°C for metric, °F for imperial)
+ *   - `wind`     — current wind speed (km/h for metric, mph for imperial)
  * @throws {Error} "City not found" — if the geocoding API returns no results.
  * @throws {Error} "Received invalid weather data from API" — if the weather response fails Zod validation.
  * @throws {Error} "Too many requests. Please try again later." — on HTTP 429.
@@ -38,6 +41,7 @@ class WeatherAppError extends Error {
  */
 export const getWeatherData = async (
   cityName: string,
+  unit: Unit = "metric",
 ): Promise<{ location: string; temp: number; wind: number }> => {
   const sanitizedCityName = cityName.trim().toLowerCase();
 
@@ -61,7 +65,16 @@ export const getWeatherData = async (
 
     // ── Step 2: fetch current weather for those coordinates ──────────────────
     const weatherRes = await axios.get<unknown>(WEATHER_BASE_URL, {
-      params: { latitude, longitude, current_weather: true },
+      params: {
+        latitude,
+        longitude,
+        current_weather: true,
+        // Override default units (Celsius / km/h) when imperial is requested.
+        ...(unit === "imperial" && {
+          temperature_unit: "fahrenheit",
+          wind_speed_unit: "mph",
+        }),
+      },
     });
 
     const validatedWeather = WeatherSchema.safeParse(weatherRes.data);
