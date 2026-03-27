@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import chalk from "chalk";
-import pkg from "../package.json";
+import pkg from "../package.json" with { type: "json" };
 import { config } from "./utils/config.js";
 import { startApp } from "./app.js";
-import type { Unit } from "./types/Config.js";
+import type { ProgramOptions, Unit } from "./types/Config.js";
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -20,18 +20,22 @@ export const runCLI = async (): Promise<void> => {
     .name("weather")
     .description(pkg.description)
     .version(pkg.version, "-v, --version", "Output the current version")
-    .option("--clear-default", "Clear the saved default city and exit")
     .option(
-      "--unit <unit>",
+      "-u, --unit <unit>",
       "Set temperature unit (e.g. 'metric' or 'imperial')",
     )
+    .option(
+      "-s, --show-settings",
+      "Show current default city and unit settings and exit",
+    )
+    .option("--clear-default", "Clear the saved default city and exit")
     .helpOption("-h, --help", "Display help for command")
     // Prevent commander from exiting on unknown options — let the app handle them.
     .allowUnknownOption(false);
 
   program.parse();
 
-  const opts = program.opts<{ clearDefault?: boolean; unit?: string }>();
+  const opts = program.opts<ProgramOptions>();
 
   // ── --unit ───────────────────────────────────────────────────────────────────
   if (opts.unit !== undefined) {
@@ -68,6 +72,20 @@ export const runCLI = async (): Promise<void> => {
     } else {
       console.log(chalk.yellow("⚠️  No default city was set."));
     }
+
+    return;
+  }
+
+  // ── --show-settings ──────────────────────────────────────────────────────────
+  if (opts.showSettings) {
+    const city = config.get("defaultCity") as string | undefined;
+    const unit = config.get("unit") as Unit | undefined;
+
+    console.log(chalk.blue("📋 Current Settings:"));
+    console.log(`   Default City: ${city ?? chalk.gray("None")}`);
+    console.log(
+      `   Unit: ${unit ?? chalk.gray("Not set (defaults to metric)")}`,
+    );
 
     return;
   }

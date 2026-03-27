@@ -142,20 +142,22 @@ Usage: weather [options]
 Simple Weather CLI with TypeScript
 
 Options:
-  -v, --version      Output the current version
-  --clear-default    Clear the saved default city and exit
-  --unit <unit>      Set the unit system and exit
-  -h, --help         Display help for command
+  -v, --version        Output the current version
+  -u, --unit <unit>    Set the unit system and exit
+  -s, --show-settings  Show current default city and unit settings and exit
+  --clear-default      Clear the saved default city and exit
+  -h, --help           Display help for command
 ```
 
-| Option            | Accepted values                          | Description                                      |
-|-------------------|------------------------------------------|--------------------------------------------------|
-| `--unit <unit>`   | `metric`, `imperial`, `m`, `i`           | Set the unit system — persisted across sessions  |
-| `--clear-default` | —                                        | Remove the saved default city from config        |
-| `-v, --version`   | —                                        | Print the current version number                 |
-| `-h, --help`      | —                                        | Display the help message                         |
+| Option               | Accepted values                          | Description                                      |
+|----------------------|------------------------------------------|--------------------------------------------------|
+| `-u, --unit <unit>`  | `metric`, `imperial`, `m`, `i`           | Set the unit system — persisted across sessions  |
+| `-s, --show-settings`| —                                        | Print the current default city and unit, then exit |
+| `--clear-default`    | —                                        | Remove the saved default city from config        |
+| `-v, --version`      | —                                        | Print the current version number                 |
+| `-h, --help`         | —                                        | Display the help message                         |
 
-> **Shorthand:** `m` is an alias for `metric`, `i` is an alias for `imperial`. All values are case-insensitive (`M`, `Imperial`, etc. all work).
+> **Shorthand for `--unit`:** `m` is an alias for `metric`, `i` is an alias for `imperial`. All values are case-insensitive (`M`, `Imperial`, etc. all work).
 
 ---
 
@@ -251,6 +253,20 @@ $ weather
 👋 Goodbye!
 ```
 
+### Viewing current settings
+
+```
+$ weather --show-settings
+📋 Current Settings:
+   Default City: Bangkok
+   Unit: metric
+
+$ weather -s
+📋 Current Settings:
+   Default City: None
+   Unit: Not set (defaults to metric)
+```
+
 ### Clearing the default city
 
 ```
@@ -328,6 +344,8 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 ┌─────────────────────────────────────────────┐
 │               src/cli.ts                    │
 │  Commander setup — parses process.argv      │
+│  • -u, --unit    → save unit, exit          │
+│  • -s, --show-settings → print config, exit │
 │  • --clear-default → delete config key      │
 │  • (no flag)       → startApp()             │
 └──────────┬──────────────────────┬───────────┘
@@ -338,9 +356,9 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 │                 │    │                      │
 │  startApp()     │    │  Conf instance for   │
 │  • prompt loop  │◄───│  reading/writing     │
-│  • save default │    │  defaultCity to disk │
-│  • quit on 'q'  │    └──────────────────────┘
-└────────┬────────┘
+│  • save default │    │  defaultCity + unit  │
+│  • quit on 'q'  │    │  to disk             │
+└────────┬────────┘    └──────────────────────┘
          │
     ┌────┴─────┐
     │          │
@@ -374,7 +392,8 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 
 1. **`src/index.ts`** is the binary entry point (shebang). It calls `runCLI()` and pipes any unhandled errors to `process.exit(1)`.
 2. **`src/cli.ts`** parses `process.argv` with Commander.
-   - `--unit <value>` — resolves shorthands (`m`/`i`) to full names, validates, saves to config, and exits.
+   - `-u, --unit <value>` — resolves shorthands (`m`/`i`) to full names, validates, saves to config, and exits.
+   - `-s, --show-settings` — reads the current default city and unit from config, prints them, and exits.
    - `--clear-default` — deletes the default city from config and exits.
    - No flag — calls `startApp()`.
 3. **`src/app.ts`** prints the welcome banner and enters a `while (true)` prompt loop powered by **`inquirer`**.
