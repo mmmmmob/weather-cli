@@ -222,3 +222,91 @@ describe("displayError", () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining(msg));
   });
 });
+
+// ─── displayWeather (imperial unit) ──────────────────────────────────────────
+
+describe("displayWeather — imperial unit", () => {
+  let consoleSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  // --- Label correctness ---
+
+  it("should show °F instead of °C for temperature when unit is imperial", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("°F"),
+    );
+  });
+
+  it("should NOT show °C when unit is imperial", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    const tempCall = (consoleSpy.mock.calls[1] as string[])[0];
+    expect(tempCall).not.toContain("°C");
+  });
+
+  it("should show mph instead of km/h for wind speed when unit is imperial", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("mph"),
+    );
+  });
+
+  it("should NOT show km/h when unit is imperial", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    const windCall = (consoleSpy.mock.calls[2] as string[])[0];
+    expect(windCall).not.toContain("km/h");
+  });
+
+  // --- Value correctness ---
+
+  it("should display the temperature value correctly in imperial", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("72"),
+    );
+  });
+
+  it("should display the wind speed value correctly in imperial", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("10"),
+    );
+  });
+
+  it("should display location unchanged regardless of unit", () => {
+    displayWeather("New York, USA", 72, 10, "imperial");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("New York, USA"),
+    );
+  });
+
+  // --- Explicit metric still shows correct labels ---
+
+  it("should show °C when unit is explicitly set to metric", () => {
+    displayWeather("Bangkok, Thailand", 33, 14, "metric");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("°C"),
+    );
+  });
+
+  it("should show km/h when unit is explicitly set to metric", () => {
+    displayWeather("Bangkok, Thailand", 33, 14, "metric");
+    expect(consoleSpy).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("km/h"),
+    );
+  });
+});

@@ -308,4 +308,120 @@ describe("getWeatherData", () => {
       }),
     );
   });
+
+  // ── Unit system ───────────────────────────────────────────────────────────────
+
+  it("should NOT include temperature_unit or wind_speed_unit params when unit is metric", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              latitude: 13.75,
+              longitude: 100.5,
+              name: "Bangkok",
+              country: "Thailand",
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { current_weather: { temperature: 30, windspeed: 10 } },
+      });
+
+    await getWeatherData("Bangkok", "metric");
+
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      2,
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: { latitude: 13.75, longitude: 100.5, current_weather: true },
+      }),
+    );
+  });
+
+  it("should NOT include unit params when unit is omitted (defaults to metric)", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              latitude: 13.75,
+              longitude: 100.5,
+              name: "Bangkok",
+              country: "Thailand",
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { current_weather: { temperature: 30, windspeed: 10 } },
+      });
+
+    await getWeatherData("Bangkok");
+
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      2,
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: { latitude: 13.75, longitude: 100.5, current_weather: true },
+      }),
+    );
+  });
+
+  it("should include temperature_unit=fahrenheit and wind_speed_unit=mph when unit is imperial", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              latitude: 13.75,
+              longitude: 100.5,
+              name: "Bangkok",
+              country: "Thailand",
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { current_weather: { temperature: 91.4, windspeed: 6.2 } },
+      });
+
+    await getWeatherData("Bangkok", "imperial");
+
+    expect(mockedAxios.get).toHaveBeenNthCalledWith(
+      2,
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          temperature_unit: "fahrenheit",
+          wind_speed_unit: "mph",
+        }),
+      }),
+    );
+  });
+
+  it("should return the temperature and wind values as-is from the API when unit is imperial", async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: {
+          results: [
+            {
+              latitude: 13.75,
+              longitude: 100.5,
+              name: "Bangkok",
+              country: "Thailand",
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { current_weather: { temperature: 91.4, windspeed: 6.2 } },
+      });
+
+    const result = await getWeatherData("Bangkok", "imperial");
+
+    expect(result.temp).toBe(91.4);
+    expect(result.wind).toBe(6.2);
+  });
 });

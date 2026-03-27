@@ -119,7 +119,7 @@ describe("startApp", () => {
 
     await startApp();
 
-    expect(mockedGetWeatherData).toHaveBeenCalledWith("Bangkok");
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("Bangkok", "metric");
   });
 
   it("should call displayWeather with the data returned by getWeatherData", async () => {
@@ -138,6 +138,7 @@ describe("startApp", () => {
       "Bangkok, Thailand",
       30,
       10,
+      "metric",
     );
   });
 
@@ -194,12 +195,14 @@ describe("startApp", () => {
       "Bangkok, Thailand",
       30,
       10,
+      "metric",
     );
     expect(mockedDisplayWeather).toHaveBeenNthCalledWith(
       2,
       "Tokyo, Japan",
       20,
       5,
+      "metric",
     );
   });
 
@@ -330,7 +333,12 @@ describe("startApp", () => {
     expect(mockedPrompt).toHaveBeenCalledTimes(3);
     expect(mockedDisplayError).toHaveBeenCalledTimes(1);
     expect(mockedDisplayWeather).toHaveBeenCalledTimes(1);
-    expect(mockedDisplayWeather).toHaveBeenCalledWith("Tokyo, Japan", 20, 5);
+    expect(mockedDisplayWeather).toHaveBeenCalledWith(
+      "Tokyo, Japan",
+      20,
+      5,
+      "metric",
+    );
   });
 
   it("should accumulate multiple errors without stopping the loop", async () => {
@@ -358,7 +366,7 @@ describe("startApp", () => {
 
     await startApp();
 
-    expect(mockedGetWeatherData).toHaveBeenCalledWith("");
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("", "metric");
   });
 
   it("should pass whitespace-only input to getWeatherData (not treated as quit)", async () => {
@@ -369,7 +377,7 @@ describe("startApp", () => {
 
     await startApp();
 
-    expect(mockedGetWeatherData).toHaveBeenCalledWith("   ");
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("   ", "metric");
   });
 
   it("should not quit when the user types 'quit' (only the single letter 'q' quits)", async () => {
@@ -384,7 +392,7 @@ describe("startApp", () => {
 
     await startApp();
 
-    expect(mockedGetWeatherData).toHaveBeenCalledWith("quit");
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("quit", "metric");
   });
 
   it("should not quit when the user types 'queue'", async () => {
@@ -399,7 +407,7 @@ describe("startApp", () => {
 
     await startApp();
 
-    expect(mockedGetWeatherData).toHaveBeenCalledWith("queue");
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("queue", "metric");
   });
 
   it("should handle a city name with special characters correctly", async () => {
@@ -414,11 +422,105 @@ describe("startApp", () => {
 
     await startApp();
 
-    expect(mockedGetWeatherData).toHaveBeenCalledWith("São Paulo");
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("São Paulo", "metric");
     expect(mockedDisplayWeather).toHaveBeenCalledWith(
       "São Paulo, Brazil",
       25,
       12,
+      "metric",
+    );
+  });
+
+  // ── Unit system threading ───────────────────────────────────────────────────
+
+  it("should pass 'imperial' to getWeatherData when config unit is 'imperial'", async () => {
+    mockedConfigGet.mockImplementation((key: string) => {
+      if (key === "unit") return "imperial";
+      return undefined;
+    });
+    mockedGetWeatherData.mockResolvedValueOnce({
+      location: "New York, USA",
+      temp: 72,
+      wind: 10,
+    });
+    mockedPrompt
+      .mockResolvedValueOnce({ city: "New York" })
+      .mockResolvedValueOnce({ city: "q" });
+
+    await startApp();
+
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("New York", "imperial");
+  });
+
+  it("should pass 'imperial' to displayWeather when config unit is 'imperial'", async () => {
+    mockedConfigGet.mockImplementation((key: string) => {
+      if (key === "unit") return "imperial";
+      return undefined;
+    });
+    mockedGetWeatherData.mockResolvedValueOnce({
+      location: "New York, USA",
+      temp: 72,
+      wind: 10,
+    });
+    mockedPrompt
+      .mockResolvedValueOnce({ city: "New York" })
+      .mockResolvedValueOnce({ city: "q" });
+
+    await startApp();
+
+    expect(mockedDisplayWeather).toHaveBeenCalledWith(
+      "New York, USA",
+      72,
+      10,
+      "imperial",
+    );
+  });
+
+  it("should fall back to 'metric' when config.get('unit') returns undefined", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetWeatherData.mockResolvedValueOnce({
+      location: "Bangkok, Thailand",
+      temp: 33,
+      wind: 14,
+    });
+    mockedPrompt
+      .mockResolvedValueOnce({ city: "Bangkok" })
+      .mockResolvedValueOnce({ city: "q" });
+
+    await startApp();
+
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("Bangkok", "metric");
+    expect(mockedDisplayWeather).toHaveBeenCalledWith(
+      "Bangkok, Thailand",
+      33,
+      14,
+      "metric",
+    );
+  });
+
+  it("should use the saved unit independently from the saved default city", async () => {
+    mockedConfigGet.mockImplementation((key: string) => {
+      if (key === "defaultCity") return "Tokyo";
+      if (key === "unit") return "imperial";
+      return undefined;
+    });
+    mockedGetWeatherData.mockResolvedValueOnce({
+      location: "Tokyo, Japan",
+      temp: 64,
+      wind: 12,
+    });
+    mockedPrompt
+      .mockResolvedValueOnce({ city: "Tokyo" })
+      .mockResolvedValueOnce({ city: "q" });
+
+    await startApp();
+
+    expect(mockedGetWeatherData).toHaveBeenCalledWith("Tokyo", "imperial");
+    expect(mockedDisplayWeather).toHaveBeenCalledWith(
+      "Tokyo, Japan",
+      64,
+      12,
+      "imperial",
     );
   });
 });

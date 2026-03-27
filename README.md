@@ -24,10 +24,10 @@ A lightweight, interactive command-line application built with **TypeScript** th
 Weather CLI is a terminal-based tool that accepts a city name as input and returns:
 
 - 📍 **Location** — resolved city name and country
-- 🌡️ **Temperature** — current temperature in °C
-- 💨 **Wind Speed** — current wind speed in km/h
+- 🌡️ **Temperature** — current temperature in °C or °F
+- 💨 **Wind Speed** — current wind speed in km/h or mph
 
-The app runs in a continuous loop, letting you query multiple cities in a single session. It remembers your last city as a default, handles invalid cities gracefully, and survives network failures without crashing.
+The app runs in a continuous loop, letting you query multiple cities in a single session. It remembers your last city as a default, supports metric and imperial units, handles invalid cities gracefully, and survives network failures without crashing.
 
 ---
 
@@ -42,7 +42,7 @@ The app runs in a continuous loop, letting you query multiple cities in a single
 | `chalk`      | Coloured, styled terminal output                  |
 | `ora`        | Spinner animation during API calls                |
 | `zod`        | Runtime schema validation for API responses       |
-| `conf`       | Persistent config storage (default city)          |
+| `conf`       | Persistent config storage (default city, unit)    |
 | `jest`       | Test runner                                       |
 | `ts-jest`    | TypeScript transformer for Jest                   |
 | `tsx`        | TypeScript runner for development (no build step) |
@@ -61,6 +61,7 @@ WeatherCLI/
 ├── src/
 │   ├── index.ts                  # Entry point — shebang + calls runCLI()
 │   ├── cli.ts                    # Commander setup — flags, app name, version, dispatch
+│   ├── cli.test.ts               # Unit tests for runCLI() — flags, dispatch, aliases
 │   ├── app.ts                    # Interactive weather loop (startApp)
 │   ├── index.test.ts             # Integration tests for startApp()
 │   ├── services/
@@ -141,16 +142,20 @@ Usage: weather [options]
 Simple Weather CLI with TypeScript
 
 Options:
-  -V, --version    Output the current version
-  --clear-default  Clear the saved default city and exit
-  -h, --help       Display help for command
+  -v, --version      Output the current version
+  --clear-default    Clear the saved default city and exit
+  --unit <unit>      Set the unit system and exit
+  -h, --help         Display help for command
 ```
 
-| Option            | Description                                        |
-|-------------------|----------------------------------------------------|
-| `--clear-default` | Removes the saved default city from config and exits |
-| `-V, --version`   | Prints the current version number                  |
-| `-h, --help`      | Displays the help message                          |
+| Option            | Accepted values                          | Description                                      |
+|-------------------|------------------------------------------|--------------------------------------------------|
+| `--unit <unit>`   | `metric`, `imperial`, `m`, `i`           | Set the unit system — persisted across sessions  |
+| `--clear-default` | —                                        | Remove the saved default city from config        |
+| `-v, --version`   | —                                        | Print the current version number                 |
+| `-h, --help`      | —                                        | Display the help message                         |
+
+> **Shorthand:** `m` is an alias for `metric`, `i` is an alias for `imperial`. All values are case-insensitive (`M`, `Imperial`, etc. all work).
 
 ---
 
@@ -205,6 +210,41 @@ $ weather
 📍 Location: Bangkok, Thailand
 🌡️  Temperature: 31°C
 💨 Wind Speed: 9 km/h
+
+? Type city name (or 'q' to quit): q
+
+👋 Goodbye!
+```
+
+### Switching unit system
+
+```
+$ weather --unit i
+✅ Unit set to imperial (°F / mph).
+
+$ weather --unit imperial
+✅ Unit set to imperial (°F / mph).
+
+$ weather --unit m
+✅ Unit set to metric (°C / km/h).
+
+$ weather --unit banana
+❌ Invalid unit "banana". Choose "metric", "imperial", "m", or "i".
+```
+
+Once set, the unit is remembered for all future sessions until changed.
+
+```
+$ weather
+
+☀️  Welcome to Weather CLI
+
+? Type city name (or 'q' to quit): Bangkok
+✔ Weather data retrieved successfully!
+
+📍 Location: Bangkok, Thailand
+🌡️  Temperature: 91.4°F
+💨 Wind Speed: 8.7 mph
 
 ? Type city name (or 'q' to quit): q
 
@@ -333,25 +373,28 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 ### Step-by-step flow
 
 1. **`src/index.ts`** is the binary entry point (shebang). It calls `runCLI()` and pipes any unhandled errors to `process.exit(1)`.
-2. **`src/cli.ts`** parses `process.argv` with Commander. If `--clear-default` is passed, it deletes the key from `conf` storage and exits immediately. Otherwise it calls `startApp()`.
+2. **`src/cli.ts`** parses `process.argv` with Commander.
+   - `--unit <value>` — resolves shorthands (`m`/`i`) to full names, validates, saves to config, and exits.
+   - `--clear-default` — deletes the default city from config and exits.
+   - No flag — calls `startApp()`.
 3. **`src/app.ts`** prints the welcome banner and enters a `while (true)` prompt loop powered by **`inquirer`**.
 4. On each iteration, it reads the saved default city from **`src/utils/config.ts`** and pre-fills the prompt. If the user enters a new city, a confirm prompt appears offering to save it as the new default.
 5. If the user types `q` (or presses `Ctrl+C`), the loop breaks cleanly.
-6. Otherwise an **`ora`** spinner starts and `getWeatherData(city)` is called from **`src/services/weather.ts`**.
+6. Otherwise an **`ora`** spinner starts. The saved `unit` (`"metric"` or `"imperial"`) is read from config and passed to `getWeatherData(city, unit)` in **`src/services/weather.ts`**.
 7. Inside `getWeatherData`:
    - Input is sanitised (trimmed & lowercased).
    - A request hits the **Open-Meteo Geocoding API**, validated with `GeocodingResponseSchema` from **`src/types/Response.ts`**.
    - If no results are returned, a `"City not found"` error is thrown.
-   - A second request hits the **Open-Meteo Forecast API**, validated with `WeatherSchema`.
-   - A plain `{ location, temp, wind }` object is returned.
-8. Back in **`src/app.ts`**, on success the spinner is marked succeeded and **`displayWeather`** from **`src/ui/display.ts`** prints the result in colour.
+   - A second request hits the **Open-Meteo Forecast API** — when `unit` is `"imperial"`, `temperature_unit=fahrenheit` and `wind_speed_unit=mph` are added to the request so the API returns values in the correct unit.
+   - The response is validated with `WeatherSchema` and a plain `{ location, temp, wind }` object is returned.
+8. Back in **`src/app.ts`**, on success the spinner is marked succeeded and **`displayWeather(location, temp, wind, unit)`** from **`src/ui/display.ts`** prints the result — swapping °C/°F and km/h/mph labels based on `unit`.
 9. On any error, the spinner is marked failed and **`displayError`** prints the message in red. The loop continues — the user is not kicked out.
 
 ---
 
 ## Running Tests
 
-The project uses **Jest** with **ts-jest** for full TypeScript support. Tests are co-located with their source files under `src/`.
+The project uses **Jest** with **ts-jest** for full TypeScript support. Tests are co-located with their source files under `src/`. The suite currently has **4 test files** and **106 tests**.
 
 ```
 npm test
@@ -365,10 +408,11 @@ npm run test:coverage
 
 ### Test files overview
 
-| Test file                      | What it tests                                                  |
-|--------------------------------|----------------------------------------------------------------|
-| `src/index.test.ts`            | Full `startApp()` flow — prompts, spinner, routing, edge cases |
-| `src/services/weather.test.ts` | `getWeatherData()` — API calls, validation, error branches     |
-| `src/ui/display.test.ts`       | `displayWeather()` and `displayError()` — output formatting    |
+| Test file                      | What it tests                                                                        |
+|--------------------------------|--------------------------------------------------------------------------------------|
+| `src/cli.test.ts`              | `runCLI()` — all flags, shorthand aliases, case-insensitivity, invalid input, dispatch |
+| `src/index.test.ts`            | `startApp()` — prompts, spinner, unit threading, routing, edge cases                 |
+| `src/services/weather.test.ts` | `getWeatherData()` — API calls, unit params, Zod validation, error branches          |
+| `src/ui/display.test.ts`       | `displayWeather()` and `displayError()` — metric and imperial output formatting      |
 
 All external dependencies (`axios`, `inquirer`, `chalk`, `ora`, `conf`) are mocked in tests so no real network calls or disk writes are made.
