@@ -29,6 +29,8 @@ Weather CLI is a terminal-based tool that accepts a city name as input and retur
 
 The app runs in a continuous loop, letting you query multiple cities in a single session. It remembers your last city as a default, supports metric and imperial units, handles invalid cities gracefully, and survives network failures without crashing.
 
+It can also **auto-detect your current location** via IP geolocation — either at startup (when no default city is saved) or on demand with the `-c` flag — and fetch the weather immediately without typing a city name.
+
 ---
 
 ## Tech Stack
@@ -61,12 +63,14 @@ WeatherCLI/
 ├── src/
 │   ├── index.ts                  # Entry point — shebang + calls runCLI()
 │   ├── cli.ts                    # Commander setup — flags, app name, version, dispatch
-│   ├── cli.test.ts               # Unit tests for runCLI() — flags, dispatch, aliases
-│   ├── app.ts                    # Interactive weather loop (startApp)
-│   ├── index.test.ts             # Integration tests for startApp()
+│   ├── cli.test.ts               # Unit tests for runCLI() — all flags, dispatch, aliases
+│   ├── app.ts                    # Interactive weather loop (startApp) + auto-detect on first run
+│   ├── index.test.ts             # Integration tests for startApp() incl. auto-detect flow
 │   ├── services/
-│   │   ├── weather.ts            # API calls, geocoding, Zod validation & error handling
-│   │   └── weather.test.ts       # Unit tests for getWeatherData()
+│   │   ├── weather.ts            # getWeatherData (city→coords→weather) + getWeatherByCoords
+│   │   ├── weather.test.ts       # Unit tests for getWeatherData() and getWeatherByCoords()
+│   │   ├── location.ts           # IP geolocation service — getLocationByIP
+│   │   └── location.test.ts      # Unit tests for getLocationByIP()
 │   ├── types/
 │   │   ├── Response.ts           # Zod schemas + inferred types for API responses
 │   │   └── Config.ts             # TypeScript interface for persistent config schema
@@ -78,6 +82,7 @@ WeatherCLI/
 ├── dist/                         # Compiled JavaScript output (auto-generated)
 ├── jest.config.cjs               # Jest configuration
 ├── tsconfig.json                 # TypeScript compiler options
+├── tsconfig.jest.json            # TypeScript overrides for ts-jest (NodeNext module mode)
 └── package.json
 ```
 
@@ -143,19 +148,21 @@ Simple Weather CLI with TypeScript
 
 Options:
   -v, --version        Output the current version
+  -c, --current        Get weather for your current location (via IP) and exit
   -u, --unit <unit>    Set the unit system and exit
   -s, --show-settings  Show current default city and unit settings and exit
   --clear-default      Clear the saved default city and exit
   -h, --help           Display help for command
 ```
 
-| Option               | Accepted values                          | Description                                      |
-|----------------------|------------------------------------------|--------------------------------------------------|
-| `-u, --unit <unit>`  | `metric`, `imperial`, `m`, `i`           | Set the unit system — persisted across sessions  |
-| `-s, --show-settings`| —                                        | Print the current default city and unit, then exit |
-| `--clear-default`    | —                                        | Remove the saved default city from config        |
-| `-v, --version`      | —                                        | Print the current version number                 |
-| `-h, --help`         | —                                        | Display the help message                         |
+| Option               | Accepted values                          | Description                                                      |
+|----------------------|------------------------------------------|------------------------------------------------------------------|
+| `-c, --current`      | —                                        | Detect location via IP and print current weather, then exit      |
+| `-u, --unit <unit>`  | `metric`, `imperial`, `m`, `i`           | Set the unit system — persisted across sessions                  |
+| `-s, --show-settings`| —                                        | Print the current default city and unit, then exit               |
+| `--clear-default`    | —                                        | Remove the saved default city from config                        |
+| `-v, --version`      | —                                        | Print the current version number                                 |
+| `-h, --help`         | —                                        | Display the help message                                         |
 
 > **Shorthand for `--unit`:** `m` is an alias for `metric`, `i` is an alias for `imperial`. All values are case-insensitive (`M`, `Imperial`, etc. all work).
 
@@ -176,16 +183,43 @@ Options:
 
 ## Example Sessions
 
-### First run — saving a default city
+### First run — auto-detect location (no saved default)
+
+When no default city is saved, the app offers to detect your location automatically before entering the prompt loop.
 
 ```
 $ weather
 
 ☀️  Welcome to Weather CLI
 
+? No saved city found — detect weather for your current location? Yes
+⠋ Detecting your location...
+✔ Location detected!
+
+📍 Location: Bangkok, Thailand
+🌡️  Temperature: 33°C
+💨 Wind Speed: 14 km/h
+
+? Save "Bangkok" as your default city? Yes
+(💾 Saved "Bangkok" as default city. Run 'weather --clear-default' to clear it)
+
+? Type city name (or 'q' to quit): q
+
+👋 Goodbye!
+```
+
+### First run — skip auto-detect, type city manually
+
+```
+$ weather
+
+☀️  Welcome to Weather CLI
+
+? No saved city found — detect weather for your current location? No
+
 ? Type city name (or 'q' to quit): Bangkok
 ? Save this city as default for next time? Yes
-(💾 Saved "Bangkok" as default city in config)
+(💾 Saved "Bangkok" as default city. Run 'weather --clear-default' to clear it)
 
 ⠋ Now checking the weather in Bangkok...
 ✔ Weather data retrieved successfully!
@@ -253,6 +287,19 @@ $ weather
 👋 Goodbye!
 ```
 
+### Getting weather for your current location
+
+```
+$ weather -c
+✔ Weather data retrieved!
+
+📍 Location: Bangkok, Thailand
+🌡️  Temperature: 33°C
+💨 Wind Speed: 14 km/h
+```
+
+Uses the unit saved in config (or metric by default). Exits immediately after printing — no prompt loop.
+
 ### Viewing current settings
 
 ```
@@ -309,13 +356,15 @@ $ weather
 
 The app handles errors gracefully and keeps the loop running so you can try another city without restarting.
 
-| Scenario                      | Message displayed                                           |
-|-------------------------------|-------------------------------------------------------------|
-| City name not recognised      | `❌ Error: City not found`                                  |
-| No internet / DNS failure     | `❌ Error: Network error. Please check your connection...`  |
-| API rate limit exceeded (429) | `❌ Error: Too many requests. Please try again later.`      |
-| API server error (500)        | `❌ Error: Internal server error. Please try again later.`  |
-| Malformed API response        | `❌ Error: Received invalid weather data from API`          |
+| Scenario                                   | Message displayed                                           |
+|--------------------------------------------|-------------------------------------------------------------|
+| City name not recognised                   | `❌ Error: City not found`                                  |
+| No internet / DNS failure                  | `❌ Error: Network error. Please check your connection...`  |
+| API rate limit exceeded (429)              | `❌ Error: Too many requests. Please try again later.`      |
+| API server error (500)                     | `❌ Error: Internal server error. Please try again later.`  |
+| Malformed API response                     | `❌ Error: Received invalid weather data from API`          |
+| IP location unresolvable (VPN, NAT, etc.)  | `❌ Error: Could not detect your location: <reason>`        |
+| IP location API unavailable                | `❌ Error: Network error. Please check your connection...`  |
 
 ```
 ? Type city name (or 'q' to quit): Atlantis
@@ -326,7 +375,16 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 ? Type city name (or 'q' to quit): _     ← loop continues
 ```
 
-> **Note:** Pressing `Ctrl+C` at the prompt is handled safely and exits with a goodbye message.
+For `-c / --current`, errors print the message and exit with code 1:
+
+```
+$ weather -c
+✖ Failed to detect location.
+
+❌ Error: Could not detect your location: private range
+```
+
+> **Note:** Pressing `Ctrl+C` at any prompt is handled safely and exits with a goodbye message.
 
 ---
 
@@ -344,6 +402,7 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 ┌─────────────────────────────────────────────┐
 │               src/cli.ts                    │
 │  Commander setup — parses process.argv      │
+│  • -c, --current → getLocationByIP, exit    │
 │  • -u, --unit    → save unit, exit          │
 │  • -s, --show-settings → print config, exit │
 │  • --clear-default → delete config key      │
@@ -355,10 +414,12 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 │  src/app.ts     │    │  src/utils/config.ts │
 │                 │    │                      │
 │  startApp()     │    │  Conf instance for   │
-│  • prompt loop  │◄───│  reading/writing     │
-│  • save default │    │  defaultCity + unit  │
-│  • quit on 'q'  │    │  to disk             │
-└────────┬────────┘    └──────────────────────┘
+│  • auto-detect  │◄───│  reading/writing     │
+│    on first run │    │  defaultCity + unit  │
+│  • prompt loop  │    │  to disk             │
+│  • save default │    └──────────────────────┘
+│  • quit on 'q'  │
+└────────┬────────┘
          │
     ┌────┴─────┐
     │          │
@@ -367,24 +428,33 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 │ src/services/        │   │ src/ui/              │
 │ weather.ts           │   │ display.ts           │
 │                      │   │                      │
-│ getWeatherData(city) │   │ displayWeather(...)  │
-│ 1. Sanitise input    │   │ displayError(...)    │
-│ 2. Geocoding API     │   │                      │
-│    → lat/lon         │   │ Formats and prints   │
-│ 3. Forecast API      │   │ coloured output to   │
-│    → temp + wind     │   │ stdout using chalk   │
-│ 4. Zod validation    │   └──────────────────────┘
-│ 5. Return result     │
-└──────────┬───────────┘
-           │ imports schemas from
-           ▼
-┌──────────────────────┐
-│ src/types/           │
-│ Response.ts          │
+│ getWeatherData()     │   │ displayWeather(...)  │
+│ (city, unit)         │   │ displayError(...)    │
+│ 1. Sanitise input    │   │                      │
+│ 2. Geocoding API     │   │ Formats and prints   │
+│    → lat/lon         │   │ coloured output to   │
+│ 3. → getWeatherBy    │   │ stdout using chalk   │
+│      Coords(...)     │   └──────────────────────┘
 │                      │
-│ GeocodingSchema      │
-│ WeatherSchema (Zod)  │
-│ Inferred TS types    │
+│ getWeatherByCoords() │
+│ (lat, lon, name,     │
+│  unit)               │
+│ 1. Forecast API      │
+│    → temp + wind     │
+│ 2. Zod validation    │
+│ 3. Return result     │
+└──────────┬───────────┘
+           ▲         │ imports schemas from
+           │         ▼
+┌──────────────────────┐   ┌──────────────────────┐
+│ src/services/        │   │ src/types/           │
+│ location.ts          │   │ Response.ts          │
+│                      │   │                      │
+│ getLocationByIP()    │   │ GeocodingSchema      │
+│ 1. ip-api.com        │   │ WeatherSchema (Zod)  │
+│    → lat/lon/city    │   │ LocationSchema (Zod) │
+│ 2. → getWeatherBy    │   │ Inferred TS types    │
+│      Coords(lat,lon) │   └──────────────────────┘
 └──────────────────────┘
 ```
 
@@ -392,28 +462,34 @@ The app handles errors gracefully and keeps the loop running so you can try anot
 
 1. **`src/index.ts`** is the binary entry point (shebang). It calls `runCLI()` and pipes any unhandled errors to `process.exit(1)`.
 2. **`src/cli.ts`** parses `process.argv` with Commander.
+   - `-c, --current` — reads the saved unit, starts a spinner, calls `getLocationByIP(unit)` from **`src/services/location.ts`**, displays weather with `displayWeather`, then exits. On error: `displayError` + `process.exit(1)`.
    - `-u, --unit <value>` — resolves shorthands (`m`/`i`) to full names, validates, saves to config, and exits.
    - `-s, --show-settings` — reads the current default city and unit from config, prints them, and exits.
    - `--clear-default` — deletes the default city from config and exits.
    - No flag — calls `startApp()`.
-3. **`src/app.ts`** prints the welcome banner and enters a `while (true)` prompt loop powered by **`inquirer`**.
-4. On each iteration, it reads the saved default city from **`src/utils/config.ts`** and pre-fills the prompt. If the user enters a new city, a confirm prompt appears offering to save it as the new default.
+3. **`src/app.ts`** prints the welcome banner. If no default city is saved, it first prompts: *"No saved city found — detect weather for your current location?"*. If the user accepts, a spinner fires, `getLocationByIP(unit)` is called, weather is displayed, and the user is offered to save the detected city as default.
+4. After the optional auto-detect step, the app enters a `while (true)` prompt loop powered by **`inquirer`**. On each iteration it reads the saved default city from **`src/utils/config.ts`** and pre-fills the prompt. If the user enters a new city, a confirm prompt offers to save it as default.
 5. If the user types `q` (or presses `Ctrl+C`), the loop breaks cleanly.
-6. Otherwise an **`ora`** spinner starts. The saved `unit` (`"metric"` or `"imperial"`) is read from config and passed to `getWeatherData(city, unit)` in **`src/services/weather.ts`**.
+6. Otherwise an **`ora`** spinner starts. The saved `unit` is read from config and passed to `getWeatherData(city, unit)` in **`src/services/weather.ts`**.
 7. Inside `getWeatherData`:
    - Input is sanitised (trimmed & lowercased).
    - A request hits the **Open-Meteo Geocoding API**, validated with `GeocodingResponseSchema` from **`src/types/Response.ts`**.
    - If no results are returned, a `"City not found"` error is thrown.
-   - A second request hits the **Open-Meteo Forecast API** — when `unit` is `"imperial"`, `temperature_unit=fahrenheit` and `wind_speed_unit=mph` are added to the request so the API returns values in the correct unit.
+   - The resolved `latitude`, `longitude`, and location label are passed to **`getWeatherByCoords`**.
+8. Inside `getWeatherByCoords` (also called directly by `getLocationByIP` to skip geocoding):
+   - A request hits the **Open-Meteo Forecast API** — when `unit` is `"imperial"`, `temperature_unit=fahrenheit` and `wind_speed_unit=mph` are appended so the API returns values in the correct unit.
    - The response is validated with `WeatherSchema` and a plain `{ location, temp, wind }` object is returned.
-8. Back in **`src/app.ts`**, on success the spinner is marked succeeded and **`displayWeather(location, temp, wind, unit)`** from **`src/ui/display.ts`** prints the result — swapping °C/°F and km/h/mph labels based on `unit`.
-9. On any error, the spinner is marked failed and **`displayError`** prints the message in red. The loop continues — the user is not kicked out.
+9. Inside `getLocationByIP` (used by `-c` and the startup auto-detect):
+   - A request hits **ip-api.com** to resolve the caller's IP to `city`, `country`, `lat`, `lon`. The `status` field is checked before Zod validation so `"fail"` responses (VPN, NAT, etc.) surface a clear error.
+   - `lat`/`lon` are passed directly to `getWeatherByCoords` — the geocoding step is skipped entirely since coordinates are already known.
+10. Back in **`src/app.ts`** or **`src/cli.ts`**, on success the spinner is marked succeeded and **`displayWeather(location, temp, wind, unit)`** from **`src/ui/display.ts`** prints the result.
+11. On any error, the spinner is marked failed and **`displayError`** prints the message in red. In interactive mode the loop continues; in `-c` mode the process exits with code 1.
 
 ---
 
 ## Running Tests
 
-The project uses **Jest** with **ts-jest** for full TypeScript support. Tests are co-located with their source files under `src/`. The suite currently has **4 test files** and **106 tests**.
+The project uses **Jest** with **ts-jest** for full TypeScript support. Tests are co-located with their source files under `src/`. The suite currently has **5 test files** and **168 tests**.
 
 ```
 npm test
@@ -427,11 +503,12 @@ npm run test:coverage
 
 ### Test files overview
 
-| Test file                      | What it tests                                                                        |
-|--------------------------------|--------------------------------------------------------------------------------------|
-| `src/cli.test.ts`              | `runCLI()` — all flags, shorthand aliases, case-insensitivity, invalid input, dispatch |
-| `src/index.test.ts`            | `startApp()` — prompts, spinner, unit threading, routing, edge cases                 |
-| `src/services/weather.test.ts` | `getWeatherData()` — API calls, unit params, Zod validation, error branches          |
-| `src/ui/display.test.ts`       | `displayWeather()` and `displayError()` — metric and imperial output formatting      |
+| Test file                        | What it tests                                                                                      |
+|----------------------------------|----------------------------------------------------------------------------------------------------|
+| `src/cli.test.ts`                | `runCLI()` — all flags (`-c`, `-u`, `-s`, `--clear-default`), aliases, invalid input, dispatch    |
+| `src/index.test.ts`              | `startApp()` — prompts, spinner, unit threading, auto-detect flow, routing, edge cases             |
+| `src/services/location.test.ts`  | `getLocationByIP()` — IP API happy path, status fail, Zod validation, HTTP/network errors, error propagation |
+| `src/services/weather.test.ts`   | `getWeatherByCoords()` and `getWeatherData()` — API calls, unit params, Zod validation, error branches |
+| `src/ui/display.test.ts`         | `displayWeather()` and `displayError()` — metric and imperial output formatting                    |
 
 All external dependencies (`axios`, `inquirer`, `chalk`, `ora`, `conf`) are mocked in tests so no real network calls or disk writes are made.
