@@ -1,6 +1,7 @@
 import { startApp } from "./app";
 import inquirer from "inquirer";
 import { getWeatherData } from "./services/weather";
+import { getLocationByIP } from "./services/location";
 import { displayWeather, displayError } from "./ui/display";
 import { config } from "./utils/config";
 
@@ -37,6 +38,7 @@ jest.mock("inquirer", () => ({
 }));
 
 jest.mock("./services/weather");
+jest.mock("./services/location");
 jest.mock("./ui/display");
 
 // conf is ESM-only — mock the entire config module so Jest never tries to
@@ -52,6 +54,7 @@ jest.mock("./utils/config", () => ({
 
 const mockedPrompt = inquirer.prompt as unknown as jest.Mock;
 const mockedGetWeatherData = getWeatherData as jest.Mock;
+const mockedGetLocationByIP = getLocationByIP as jest.Mock;
 const mockedDisplayWeather = displayWeather as jest.Mock;
 const mockedDisplayError = displayError as jest.Mock;
 const mockedConfigGet = config.get as jest.Mock;
@@ -65,8 +68,12 @@ describe("startApp", () => {
   beforeEach(() => {
     // Clear call history (but NOT implementations such as mockReturnThis).
     jest.clearAllMocks();
-    // Default: no saved city — each test that needs a default must set it explicitly.
-    mockedConfigGet.mockReturnValue(undefined);
+    // Default: a city IS saved so the auto-detect block never fires in the main
+    // test suite. Tests that exercise the auto-detect path must override this.
+    mockedConfigGet.mockImplementation((key: string) => {
+      if (key === "defaultCity") return "Bangkok";
+      return undefined;
+    });
     consoleSpy = jest.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -436,6 +443,7 @@ describe("startApp", () => {
   it("should pass 'imperial' to getWeatherData when config unit is 'imperial'", async () => {
     mockedConfigGet.mockImplementation((key: string) => {
       if (key === "unit") return "imperial";
+      if (key === "defaultCity") return "Bangkok";
       return undefined;
     });
     mockedGetWeatherData.mockResolvedValueOnce({
@@ -455,6 +463,7 @@ describe("startApp", () => {
   it("should pass 'imperial' to displayWeather when config unit is 'imperial'", async () => {
     mockedConfigGet.mockImplementation((key: string) => {
       if (key === "unit") return "imperial";
+      if (key === "defaultCity") return "Bangkok";
       return undefined;
     });
     mockedGetWeatherData.mockResolvedValueOnce({
@@ -477,7 +486,10 @@ describe("startApp", () => {
   });
 
   it("should fall back to 'metric' when config.get('unit') returns undefined", async () => {
-    mockedConfigGet.mockReturnValue(undefined);
+    mockedConfigGet.mockImplementation((key: string) => {
+      if (key === "defaultCity") return "Bangkok";
+      return undefined; // unit is undefined → app defaults to "metric"
+    });
     mockedGetWeatherData.mockResolvedValueOnce({
       location: "Bangkok, Thailand",
       temp: 33,
@@ -522,5 +534,187 @@ describe("startApp", () => {
       12,
       "imperial",
     );
+  });
+
+  // ── Auto-detect location on startup (no saved default city) ────────────────
+
+  describe("auto-detect location on startup", () => {
+    beforeEach(() => {
+      // Override suite default: no saved city so auto-detect always fires.
+      mockedConfigGet.mockReturnValue(undefined);
+    });
+
+    it("should prompt the user to auto-detect when no default city is saved", async () => {
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedPrompt).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "useLocation" }),
+        ]),
+      );
+    });
+
+    it("should not call getLocationByIP when the user declines auto-detect", async () => {
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedGetLocationByIP).not.toHaveBeenCalled();
+    });
+
+    it("should call getLocationByIP with the saved unit when user accepts", async () => {
+      mockedConfigGet.mockImplementation((key: string) => {
+        if (key === "unit") return "imperial";
+        return undefined;
+      });
+      mockedGetLocationByIP.mockResolvedValueOnce({
+        location: "Bangkok, Thailand",
+        temp: 32,
+        wind: 10,
+      });
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ saveDetected: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedGetLocationByIP).toHaveBeenCalledWith("imperial");
+    });
+
+    it("should call getLocationByIP with 'metric' when no unit is saved", async () => {
+      mockedGetLocationByIP.mockResolvedValueOnce({
+        location: "Bangkok, Thailand",
+        temp: 32,
+        wind: 10,
+      });
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ saveDetected: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedGetLocationByIP).toHaveBeenCalledWith("metric");
+    });
+
+    it("should display weather after a successful auto-detect", async () => {
+      mockedGetLocationByIP.mockResolvedValueOnce({
+        location: "Bangkok, Thailand",
+        temp: 32,
+        wind: 10,
+      });
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ saveDetected: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedDisplayWeather).toHaveBeenCalledWith(
+        "Bangkok, Thailand",
+        32,
+        10,
+        "metric",
+      );
+    });
+
+    it("should save the detected city when the user confirms the save prompt", async () => {
+      mockedGetLocationByIP.mockResolvedValueOnce({
+        location: "Bangkok, Thailand",
+        temp: 32,
+        wind: 10,
+      });
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ saveDetected: true })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedConfigSet).toHaveBeenCalledWith("defaultCity", "Bangkok");
+    });
+
+    it("should not save the detected city when the user declines the save prompt", async () => {
+      mockedGetLocationByIP.mockResolvedValueOnce({
+        location: "Bangkok, Thailand",
+        temp: 32,
+        wind: 10,
+      });
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ saveDetected: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedConfigSet).not.toHaveBeenCalled();
+    });
+
+    it("should fail the spinner and display an error when getLocationByIP throws", async () => {
+      mockedGetLocationByIP.mockRejectedValueOnce(
+        new Error("Network error. Please check your connection and try again."),
+      );
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockSpinner.fail).toHaveBeenCalledTimes(1);
+      expect(mockedDisplayError).toHaveBeenCalledWith(
+        "Network error. Please check your connection and try again.",
+      );
+    });
+
+    it("should continue to the main loop after an auto-detect failure", async () => {
+      mockedGetLocationByIP.mockRejectedValueOnce(
+        new Error("Could not detect your location"),
+      );
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Goodbye"),
+      );
+    });
+
+    it("should exit gracefully when Ctrl+C is pressed during the auto-detect prompt", async () => {
+      const exitError = Object.assign(
+        new Error("User force closed the prompt"),
+        { name: "ExitPromptError" },
+      );
+      mockedPrompt.mockRejectedValueOnce(exitError);
+
+      await expect(startApp()).resolves.toBeUndefined();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Goodbye"),
+      );
+    });
+
+    it("should not call getWeatherData during auto-detect", async () => {
+      mockedGetLocationByIP.mockResolvedValueOnce({
+        location: "Bangkok, Thailand",
+        temp: 32,
+        wind: 10,
+      });
+      mockedPrompt
+        .mockResolvedValueOnce({ useLocation: true })
+        .mockResolvedValueOnce({ saveDetected: false })
+        .mockResolvedValueOnce({ city: "q" });
+
+      await startApp();
+
+      expect(mockedGetWeatherData).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1,6 +1,8 @@
 import { runCLI } from "./cli";
 import { config } from "./utils/config";
 import { startApp } from "./app";
+import { getLocationByIP } from "./services/location";
+import { displayWeather, displayError } from "./ui/display";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -12,6 +14,20 @@ jest.mock("chalk", () => {
   };
   return { __esModule: true, default: createChalk() };
 });
+
+// Variables starting with "mock" are hoisted alongside jest.mock(), so
+// mockSpinner can safely be referenced inside the ora factory below.
+const mockSpinner = {
+  start: jest.fn().mockReturnThis(),
+  succeed: jest.fn().mockReturnThis(),
+  fail: jest.fn().mockReturnThis(),
+};
+
+// ora is ESM-only — always return the same mockSpinner object.
+jest.mock("ora", () => ({
+  __esModule: true,
+  default: jest.fn(() => mockSpinner),
+}));
 
 // conf is ESM-only — mock the entire config module so Jest never loads it,
 // and tests never touch the real config file on disk.
@@ -28,12 +44,26 @@ jest.mock("./app", () => ({
   startApp: jest.fn().mockResolvedValue(undefined),
 }));
 
+// Mock the location service so no real HTTP calls are made.
+jest.mock("./services/location", () => ({
+  getLocationByIP: jest.fn(),
+}));
+
+// Mock display utilities to capture calls without printing to stdout.
+jest.mock("./ui/display", () => ({
+  displayWeather: jest.fn(),
+  displayError: jest.fn(),
+}));
+
 // ─── Typed helpers ────────────────────────────────────────────────────────────
 
 const mockedConfigGet = config.get as jest.Mock;
 const mockedConfigSet = config.set as jest.Mock;
 const mockedConfigDelete = (config as any).delete as jest.Mock;
 const mockedStartApp = startApp as jest.Mock;
+const mockedGetLocationByIP = getLocationByIP as jest.Mock;
+const mockedDisplayWeather = displayWeather as jest.Mock;
+const mockedDisplayError = displayError as jest.Mock;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +85,151 @@ describe("runCLI", () => {
     process.argv = originalArgv;
     exitSpy.mockRestore();
     consoleSpy.mockRestore();
+  });
+
+  // ── --show-settings ──────────────────────────────────────────────────────────
+
+  it("should print the saved default city when --show-settings is passed", async () => {
+    mockedConfigGet.mockImplementation((key: string) =>
+      key === "defaultCity" ? "Bangkok" : undefined,
+    );
+    process.argv = ["node", "weather", "--show-settings"];
+    await runCLI();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Bangkok"));
+  });
+
+  it("should print 'None' for default city when none is saved", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    process.argv = ["node", "weather", "--show-settings"];
+    await runCLI();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("None"));
+  });
+
+  it("should print the saved unit when --show-settings is passed", async () => {
+    mockedConfigGet.mockImplementation((key: string) =>
+      key === "unit" ? "imperial" : undefined,
+    );
+    process.argv = ["node", "weather", "--show-settings"];
+    await runCLI();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("imperial"),
+    );
+  });
+
+  it("should print 'Not set (defaults to metric)' when no unit is saved", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    process.argv = ["node", "weather", "--show-settings"];
+    await runCLI();
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Not set (defaults to metric)"),
+    );
+  });
+
+  it("should not call startApp when --show-settings is passed", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    process.argv = ["node", "weather", "--show-settings"];
+    await runCLI();
+    expect(mockedStartApp).not.toHaveBeenCalled();
+  });
+
+  it("should work with the -s short flag", async () => {
+    mockedConfigGet.mockImplementation((key: string) =>
+      key === "defaultCity" ? "Bangkok" : undefined,
+    );
+    process.argv = ["node", "weather", "-s"];
+    await runCLI();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Bangkok"));
+  });
+
+  // ── -c, --current ────────────────────────────────────────────────────────────
+
+  it("should call getLocationByIP with the saved unit when -c is passed", async () => {
+    mockedConfigGet.mockImplementation((key: string) =>
+      key === "unit" ? "imperial" : undefined,
+    );
+    mockedGetLocationByIP.mockResolvedValueOnce({
+      location: "Bangkok, Thailand",
+      temp: 32,
+      wind: 10,
+    });
+    process.argv = ["node", "weather", "-c"];
+    await runCLI();
+    expect(mockedGetLocationByIP).toHaveBeenCalledWith("imperial");
+  });
+
+  it("should call getLocationByIP with 'metric' when no unit is saved", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetLocationByIP.mockResolvedValueOnce({
+      location: "Bangkok, Thailand",
+      temp: 32,
+      wind: 10,
+    });
+    process.argv = ["node", "weather", "-c"];
+    await runCLI();
+    expect(mockedGetLocationByIP).toHaveBeenCalledWith("metric");
+  });
+
+  it("should call displayWeather with the data returned by getLocationByIP", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetLocationByIP.mockResolvedValueOnce({
+      location: "Bangkok, Thailand",
+      temp: 32,
+      wind: 10,
+    });
+    process.argv = ["node", "weather", "-c"];
+    await runCLI();
+    expect(mockedDisplayWeather).toHaveBeenCalledWith(
+      "Bangkok, Thailand",
+      32,
+      10,
+      "metric",
+    );
+  });
+
+  it("should not call startApp when -c is passed", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetLocationByIP.mockResolvedValueOnce({
+      location: "Bangkok, Thailand",
+      temp: 32,
+      wind: 10,
+    });
+    process.argv = ["node", "weather", "-c"];
+    await runCLI();
+    expect(mockedStartApp).not.toHaveBeenCalled();
+  });
+
+  it("should call displayError and exit with code 1 when getLocationByIP throws", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetLocationByIP.mockRejectedValueOnce(
+      new Error("Could not detect your location: private range"),
+    );
+    process.argv = ["node", "weather", "-c"];
+    await expect(runCLI()).rejects.toThrow("process.exit(1)");
+    expect(mockedDisplayError).toHaveBeenCalledWith(
+      "Could not detect your location: private range",
+    );
+  });
+
+  it("should not call displayWeather when getLocationByIP throws", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetLocationByIP.mockRejectedValueOnce(
+      new Error("Network error. Please check your connection and try again."),
+    );
+    process.argv = ["node", "weather", "-c"];
+    await expect(runCLI()).rejects.toThrow();
+    expect(mockedDisplayWeather).not.toHaveBeenCalled();
+  });
+
+  it("should work with the --current long flag", async () => {
+    mockedConfigGet.mockReturnValue(undefined);
+    mockedGetLocationByIP.mockResolvedValueOnce({
+      location: "Bangkok, Thailand",
+      temp: 32,
+      wind: 10,
+    });
+    process.argv = ["node", "weather", "--current"];
+    await runCLI();
+    expect(mockedGetLocationByIP).toHaveBeenCalledTimes(1);
   });
 
   // ── No flags → interactive mode ─────────────────────────────────────────────

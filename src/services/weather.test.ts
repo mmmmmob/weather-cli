@@ -1,8 +1,195 @@
-import { getWeatherData } from "./weather";
+import { getWeatherByCoords, getWeatherData } from "./weather";
 import axios from "axios";
 
 jest.mock("axios");
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+describe("getWeatherByCoords", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // ── Happy path ────────────────────────────────────────────────────────────
+
+  it("should return the correct location, temp, and wind on success", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 30, windspeed: 10 } },
+    });
+
+    const result = await getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand");
+
+    expect(result).toEqual({
+      location: "Bangkok, Thailand",
+      temp: 30,
+      wind: 10,
+    });
+  });
+
+  it("should use the provided locationName as-is in the result", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 25, windspeed: 8 } },
+    });
+
+    const result = await getWeatherByCoords(35.68, 139.69, "Tokyo, Japan");
+
+    expect(result.location).toBe("Tokyo, Japan");
+  });
+
+  it("should call the weather API with the correct URL and coordinates", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 30, windspeed: 10 } },
+    });
+
+    await getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand");
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: expect.objectContaining({ latitude: 13.75, longitude: 100.5 }),
+      }),
+    );
+  });
+
+  it("should make exactly one API call (no geocoding step)", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 30, windspeed: 10 } },
+    });
+
+    await getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand");
+
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Unit system ───────────────────────────────────────────────────────────
+
+  it("should NOT include temperature_unit or wind_speed_unit when unit is metric", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 30, windspeed: 10 } },
+    });
+
+    await getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand", "metric");
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: { latitude: 13.75, longitude: 100.5, current_weather: true },
+      }),
+    );
+  });
+
+  it("should NOT include unit params when unit is omitted (defaults to metric)", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 30, windspeed: 10 } },
+    });
+
+    await getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand");
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: { latitude: 13.75, longitude: 100.5, current_weather: true },
+      }),
+    );
+  });
+
+  it("should include temperature_unit=fahrenheit and wind_speed_unit=mph when unit is imperial", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 86, windspeed: 6.2 } },
+    });
+
+    await getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand", "imperial");
+
+    expect(mockedAxios.get).toHaveBeenCalledWith(
+      "https://api.open-meteo.com/v1/forecast",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          temperature_unit: "fahrenheit",
+          wind_speed_unit: "mph",
+        }),
+      }),
+    );
+  });
+
+  it("should return temperature and wind values as-is from the API when unit is imperial", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temperature: 91.4, windspeed: 6.2 } },
+    });
+
+    const result = await getWeatherByCoords(
+      13.75,
+      100.5,
+      "Bangkok, Thailand",
+      "imperial",
+    );
+
+    expect(result.temp).toBe(91.4);
+    expect(result.wind).toBe(6.2);
+  });
+
+  // ── Error: invalid response ───────────────────────────────────────────────
+
+  it("should throw WeatherAppError when the weather API returns invalid data", async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: { current_weather: { temp: "hot", windspeed: "fast" } },
+    });
+
+    await expect(
+      getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand"),
+    ).rejects.toThrow("Received invalid weather data from API");
+  });
+
+  // ── HTTP error status codes ───────────────────────────────────────────────
+
+  it("should throw 'Too many requests' on HTTP 429", async () => {
+    mockedAxios.get.mockRejectedValueOnce({ response: { status: 429 } });
+
+    await expect(
+      getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand"),
+    ).rejects.toThrow("Too many requests. Please try again later.");
+  });
+
+  it("should throw 'Internal server error' on HTTP 500", async () => {
+    mockedAxios.get.mockRejectedValueOnce({ response: { status: 500 } });
+
+    await expect(
+      getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand"),
+    ).rejects.toThrow("Internal server error. Please try again later.");
+  });
+
+  it("should throw 'Failed to fetch weather data' for any other HTTP error", async () => {
+    mockedAxios.get.mockRejectedValueOnce({ response: { status: 503 } });
+
+    await expect(
+      getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand"),
+    ).rejects.toThrow("Failed to fetch weather data");
+  });
+
+  // ── Network errors ────────────────────────────────────────────────────────
+
+  it("should throw 'Network error' on timeout", async () => {
+    mockedAxios.get.mockRejectedValueOnce(
+      new Error("timeout of 5000ms exceeded"),
+    );
+
+    await expect(
+      getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand"),
+    ).rejects.toThrow(
+      "Network error. Please check your connection and try again.",
+    );
+  });
+
+  it("should throw 'Network error' on connection refused", async () => {
+    mockedAxios.get.mockRejectedValueOnce(
+      new Error("connect ECONNREFUSED 127.0.0.1:80"),
+    );
+
+    await expect(
+      getWeatherByCoords(13.75, 100.5, "Bangkok, Thailand"),
+    ).rejects.toThrow(
+      "Network error. Please check your connection and try again.",
+    );
+  });
+});
 
 describe("getWeatherData", () => {
   beforeEach(() => {
