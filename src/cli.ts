@@ -1,8 +1,11 @@
 import { Command } from "commander";
 import chalk from "chalk";
+import ora from "ora";
 import pkg from "../package.json" with { type: "json" };
 import { config } from "./utils/config.js";
 import { startApp } from "./app.js";
+import { getLocationByIP } from "./services/location.js";
+import { displayWeather, displayError } from "./ui/display.js";
 import type { ProgramOptions, Unit } from "./types/Config.js";
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -20,6 +23,10 @@ export const runCLI = async (): Promise<void> => {
     .name("weather")
     .description(pkg.description)
     .version(pkg.version, "-v, --version", "Output the current version")
+    .option(
+      "-c, --current",
+      "Get current weather automatically based on device location",
+    )
     .option(
       "-u, --unit <unit>",
       "Set temperature unit (e.g. 'metric' or 'imperial')",
@@ -87,6 +94,22 @@ export const runCLI = async (): Promise<void> => {
       `   Unit: ${unit ?? chalk.gray("Not set (defaults to metric)")}`,
     );
 
+    return;
+  }
+
+  // ── -c, --current ────────────────────────────────────────────────────────────
+  if (opts.current) {
+    const unit = (config.get("unit") ?? "metric") as Unit;
+    const spinner = ora("Detecting your location...").start();
+    try {
+      const data = await getLocationByIP(unit);
+      spinner.succeed("Weather data retrieved!\n");
+      displayWeather(data.location, data.temp, data.wind, unit);
+    } catch (e: any) {
+      spinner.fail("Failed to detect location.\n");
+      displayError(e.message);
+      process.exit(1);
+    }
     return;
   }
 

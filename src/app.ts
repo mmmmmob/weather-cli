@@ -3,8 +3,10 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 import ora from "ora";
 import { getWeatherData } from "./services/weather.js";
+import { getLocationByIP } from "./services/location.js";
 import { displayError, displayWeather } from "./ui/display.js";
 import { config } from "./utils/config.js";
+import type { Unit } from "./types/Config.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -22,6 +24,59 @@ export const QUIT_COMMAND = "q";
  */
 export const startApp = async () => {
   console.log(chalk.green.bold("\n☀️  Welcome to Weather CLI\n"));
+
+  // ── Auto-detect location (first-run, no saved default) ───────────────────────
+  if (!config.get("defaultCity")) {
+    try {
+      const { useLocation } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "useLocation",
+          message:
+            "No saved city found — detect weather for your current location?",
+          default: true,
+        },
+      ]);
+
+      if (useLocation) {
+        const unit = (config.get("unit") ?? "metric") as Unit;
+        const spinner = ora("Detecting your location...").start();
+        try {
+          const data = await getLocationByIP(unit);
+          spinner.succeed("Location detected!\n");
+          displayWeather(data.location, data.temp, data.wind, unit);
+
+          const detectedCity = data.location.split(", ")[0];
+          const { saveDetected } = await inquirer.prompt([
+            {
+              type: "confirm",
+              name: "saveDetected",
+              message: `Save "${detectedCity}" as your default city?`,
+              default: true,
+            },
+          ]);
+
+          if (saveDetected) {
+            config.set("defaultCity", detectedCity);
+            console.log(
+              chalk.gray(
+                `(💾 Saved "${detectedCity}" as default city. Run 'weather --clear-default' to clear it)\n`,
+              ),
+            );
+          }
+        } catch (e: any) {
+          spinner.fail("Failed to detect location.\n");
+          displayError(e.message);
+        }
+      }
+    } catch (e: any) {
+      if (e.name === "ExitPromptError") {
+        console.log("\n👋 Goodbye!");
+        return;
+      }
+      throw e;
+    }
+  }
 
   while (true) {
     // Pre-fill city with the saved default (if any) — acts as both the prompt

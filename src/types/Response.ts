@@ -17,6 +17,12 @@
 
 import z from "zod";
 
+export interface Weather {
+  location: string;
+  temp: number;
+  wind: number;
+}
+
 // ─── Geocoding ────────────────────────────────────────────────────────────────
 // Represents a single entry in the `results` array returned by the geocoding
 // API. Only the four fields actually used by the service are declared here.
@@ -52,3 +58,25 @@ export const WeatherSchema = z.object({
 });
 
 export type WeatherData = z.infer<typeof WeatherSchema>;
+
+// ─── Location ────────────────────────────────────────────────────────────────
+export const LocationSchema = z.object({
+  status: z.literal("success"),
+  city: z.string(),
+  country: z.string(),
+  lat: z.number(),
+  lon: z.number(),
+});
+
+export type LocationData = z.infer<typeof LocationSchema>;
+
+// ─── Error class ─────────────────────────────────────────────────────────────
+
+// Marks errors thrown by our own logic so the catch block never converts
+// them into a generic "Network error" message.
+export class WeatherAppError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WeatherAppError";
+  }
+}

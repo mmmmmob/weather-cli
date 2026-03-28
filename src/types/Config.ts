@@ -8,6 +8,7 @@ export interface ConfigSchema {
 
 export interface ProgramOptions {
   clearDefault?: boolean;
+  current?: boolean;
   unit?: string;
   showSettings?: boolean;
 }
