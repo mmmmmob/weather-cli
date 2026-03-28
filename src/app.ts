@@ -21,13 +21,17 @@ export const QUIT_COMMAND = "q";
  * Repeatedly prompts the user for a city name, fetches the current weather,
  * and displays the result. The loop continues until the user types
  * {@link QUIT_COMMAND} or presses Ctrl+C.
+ *
+ * Any ExitPromptError (Ctrl+C) thrown from any inquirer.prompt call is allowed
+ * to bubble up to the single outer try/catch, so "Goodbye!" is always printed
+ * exactly once regardless of where in the flow the user exits.
  */
 export const startApp = async () => {
   console.log(chalk.green.bold("\n☀️  Welcome to Weather CLI\n"));
 
-  // ── Auto-detect location (first-run, no saved default) ───────────────────────
-  if (!config.get("defaultCity")) {
-    try {
+  try {
+    // ── Auto-detect location (first-run, no saved default) ───────────────────────
+    if (!config.get("defaultCity")) {
       const { useLocation } = await inquirer.prompt([
         {
           type: "confirm",
@@ -65,26 +69,22 @@ export const startApp = async () => {
             );
           }
         } catch (e: any) {
+          // Re-throw ExitPromptError so it reaches the outer catch and exits
+          // cleanly. Only swallow actual location / weather fetch errors.
+          if (e.name === "ExitPromptError") throw e;
           spinner.fail("Failed to detect location.\n");
           displayError(e.message);
         }
       }
-    } catch (e: any) {
-      if (e.name === "ExitPromptError") {
-        console.log("\n👋 Goodbye!");
-        return;
-      }
-      throw e;
     }
-  }
 
-  while (true) {
-    // Pre-fill city with the saved default (if any) — acts as both the prompt
-    // default value and the baseline for detecting whether the user entered something new.
-    let city = config.get("defaultCity") as string | undefined;
+    // ── Main prompt loop ──────────────────────────────────────────────────────────
+    while (true) {
+      // Pre-fill city with the saved default (if any) — acts as both the prompt
+      // default value and the baseline for detecting whether the user entered
+      // something new.
+      let city = config.get("defaultCity") as string | undefined;
 
-    // ── Prompt — catches Ctrl+C (ExitPromptError) and unexpected inquirer errors
-    try {
       const answer = await inquirer.prompt([
         {
           type: "input",
@@ -117,35 +117,35 @@ export const startApp = async () => {
           ),
         );
       }
-    } catch (e: any) {
-      if (e.name === "ExitPromptError") {
-        console.log("\n👋 Goodbye!");
-        break;
+
+      // TypeScript narrowing guard — city is always assigned at this point since
+      // any ExitPromptError from the prompt above has already bubbled up.
+      if (city === undefined) continue;
+
+      if (city.toLowerCase() === QUIT_COMMAND) break;
+
+      const spinner = ora(`Now checking the weather in ${chalk.cyan(city)}...`);
+      spinner.start();
+
+      // ── Service — catches API / network errors without killing the loop ────────
+      const unit = config.get("unit") ?? "metric";
+      try {
+        const data = await getWeatherData(city, unit);
+        spinner.succeed("Weather data retrieved successfully!\n");
+        displayWeather(data.location, data.temp, data.wind, unit);
+      } catch (e: any) {
+        spinner.fail("Failed to retrieve weather data.\n");
+        displayError(e.message);
       }
-      throw e;
     }
-
-    // The catch block above always breaks or rethrows, so city is always
-    // assigned here — this guard exists solely to narrow the type for TypeScript.
-    if (city === undefined) continue;
-
-    if (city.toLowerCase() === QUIT_COMMAND) {
-      console.log("\n👋 Goodbye!\n");
-      break;
-    }
-
-    const spinner = ora(`Now checking the weather in ${chalk.cyan(city)}...`);
-    spinner.start();
-
-    // ── Service — catches API / network errors without killing the loop
-    const unit = config.get("unit") ?? "metric";
-    try {
-      const data = await getWeatherData(city, unit);
-      spinner.succeed("Weather data retrieved successfully!\n");
-      displayWeather(data.location, data.temp, data.wind, unit);
-    } catch (e: any) {
-      spinner.fail("Failed to retrieve weather data.\n");
-      displayError(e.message);
-    }
+  } catch (e: any) {
+    // Only ExitPromptError (Ctrl+C) should reach here — anything else is an
+    // unexpected error that must be re-thrown.
+    if (e.name !== "ExitPromptError") throw e;
   }
+
+  // ── Goodbye ───────────────────────────────────────────────────────────────────
+  // Printed exactly once — whether the user typed 'q' or pressed Ctrl+C at
+  // any prompt in the auto-detect block or the main loop.
+  console.log("\n👋 Goodbye!\n");
 };
