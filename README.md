@@ -53,6 +53,7 @@ It can also **auto-detect your current location** via IP geolocation — either 
 
 - [Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api) — converts a city name to latitude/longitude
 - [Open-Meteo Weather API](https://open-meteo.com/en/docs) — returns current weather for a coordinate pair
+- [ip-api.com](https://ip-api.com) — resolves the caller's public IP to a city name and coordinates (free tier, HTTP only)
 
 ---
 
